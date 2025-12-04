@@ -12,8 +12,7 @@ project/
 │   └── evaluation/              # metriche e analisi finale
 │       └── metrics.py           # accuracy, F1, confusion matrix
 │── notebooks/                   # solo esplorazione e debug
-│   ├── 01_preprocessing.ipynb   # test funzioni di preprocessing
-│   └── 02_training.ipynb        # sperimentazioni sul training
-│── requirements.txt
+│   ├── preprocessing.ipynb   # test funzioni di preprocessing
+│   └── training.ipynb        # sperimentazioni sul training
 │── README.md
 
