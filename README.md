@@ -3,13 +3,13 @@
 project/
 │── data/                        # dove tenere i file RAVDESS  
 │── src/                         # tutto il codice “serio”  
-│   ├── 01preprocessing/           # pulizia e trasformazione dei dati  
+│   ├── preprocessing/           # pulizia e trasformazione dei dati  
 │   │   └── dataset.py           # Dataset PyTorch + mel-spectrogram + augmentation  
-│   ├── 02models/                  # tutte le architetture  
+│   ├── models/                  # tutte le architetture  
 │   │   └── crnn.py              # CNN+LSTM  
-│   ├── 03training/                # training ed utilities  
+│   ├── training/                # training ed utilities  
 │   │   └── train.py             # ciclo di addestramento  
-│   └── 04evaluation/              # metriche e analisi finale  
+│   └── evaluation/              # metriche e analisi finale  
 │       └── metrics.py           # accuracy, F1, confusion matrix  
 │── notebooks/                   # solo esplorazione e debug  
 │   ├── preprocessing.ipynb   # test funzioni di preprocessing  
