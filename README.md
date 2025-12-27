@@ -16,12 +16,27 @@ project/
 │   └── training.ipynb        # sperimentazioni sul training  
 │── README.md
 
-## DA FARE
-Algoritmo per classificare i .wav in base a questa decodifica:   
-- Modality (01 = full-AV, 02 = video-only, 03 = audio-only).
-- Vocal channel (01 = speech, 02 = song).
-- Emotion (01 = neutral, 02 = calm, 03 = happy, 04 = sad, 05 = angry, 06 = fearful, 07 = disgust, 08 = surprised).
-- Emotional intensity (01 = normal, 02 = strong). NOTE: There is no strong intensity for the 'neutral' emotion.
-- Statement (01 = "Kids are talking by the door", 02 = "Dogs are sitting by the door").
-- Repetition (01 = 1st repetition, 02 = 2nd repetition).
-- Actor (01 to 24. Odd numbered actors are male, even numbered actors are female).
+## TRACCIA DEL PROGGETTO
+1. Dataset (RAVDESS + split speaker-independent)
+2. Architettura (CNN + LSTM)
+3. Training setup (preprocessing, augmentations, optimizer, loss…)
+4. Valutazione (accuracy, precision, recall, F1, confusion matrix)
+
+### Oggi 27/12/25 abbiamo fatto:
+Dataset & preprocessing
+- RAVDESS caricato da cartelle Actor_XX
+- parsing del filename e labeling emozioni (ID → nome → indice)
+- DataFrame di controllo con distribuzione emozioni/attori
+- pipeline audio → mono → resample 16k → pad/crop 4s
+- log-Mel (64 × 401) con MelSpectrogram + AmplitudeToDB
+- RavdessDataset PyTorch che restituisce (X, y)
+- split speaker-independent: train / val / test per attori
+- DataLoader funzionante + funzione per plottare uno spettrogramma  
+  
+QUINDI La parte “DATASET + PREPROCESSING” è fatta.
+
+## PROSSIMO PASSO: ARCHITETTURA (CNN + LSTM)
+## POI:
+### TRAINING SET UP
+### AUGUMENTATIONS
+### VALUTAZIONE
