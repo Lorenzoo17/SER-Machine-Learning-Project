@@ -89,6 +89,15 @@ def split_by_speakers(
         # se non è in nessuna lista, lo ignoriamo
     return train, val, test
 
+def filter_audio_speech(filepaths: List[str]) -> List[str]:
+    """Tiene solo audio-only (03) e speech (01)."""
+    out = []
+    for fp in filepaths:
+        info = parse_ravdess_filename(fp)
+        if info["modality"] == "03" and info["vocal_channel"] == "01":
+            out.append(fp)
+    return out
+
 def plot_log_mel_from_loader(data_loader, idx: int = 0):
     """
     Stampa il log-Mel spectrogram di un singolo campione dal DataLoader.
@@ -115,6 +124,42 @@ def plot_log_mel_from_loader(data_loader, idx: int = 0):
     plt.tight_layout()
     plt.show()
     
+def trim_silence_np(audio: np.ndarray, sr: int, top_db: float = 30.0) -> np.ndarray:
+    """
+    Silence trimming semplice (inizio/fine) basato su energia.
+    - top_db più basso = taglia meno
+    - top_db più alto = taglia di più
+    """
+    # RMS (energia) su finestre
+    frame_length = int(0.025 * sr)  # 25 ms
+    hop_length = int(0.010 * sr)    # 10 ms
+
+    if len(audio) < frame_length:
+        return audio
+
+    # Calcolo RMS per frame
+    rms = []
+    for i in range(0, len(audio) - frame_length + 1, hop_length):
+        frame = audio[i:i + frame_length]
+        rms.append(np.sqrt(np.mean(frame**2) + 1e-12))
+    rms = np.array(rms)
+
+    # Soglia: max_rms / (10^(top_db/20))
+    max_rms = rms.max()
+    thr = max_rms / (10 ** (top_db / 20))
+
+    # Trova i frame "attivi"
+    idx = np.where(rms >= thr)[0]
+    if len(idx) == 0:
+        return audio  # fallback: non tagliare
+
+    start_frame = idx[0]
+    end_frame = idx[-1]
+
+    start_sample = start_frame * hop_length
+    end_sample = min(len(audio), end_frame * hop_length + frame_length)
+
+    return audio[start_sample:end_sample]
 
 
 # DATASET PYTORCH
@@ -175,6 +220,9 @@ class RavdessDataset(Dataset):
         # stereo -> mono perche non ci servono le informazioni di spazio e ambiente
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
+
+        # silence trimming (prima del resample e del pad/crop)
+        audio = trim_silence_np(audio, sr, top_db=30.0)
 
         waveform = torch.from_numpy(audio).float().unsqueeze(0)  # [1, samples]
         return waveform, sr
