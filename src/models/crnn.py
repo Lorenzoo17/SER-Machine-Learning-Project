@@ -20,29 +20,29 @@ class CRNNBaseline(nn.Module):
             # FLB1
             nn.Conv2d(1, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU(),
+            nn.ELU(alpha=1.0),
             nn.MaxPool2d((2, 2)),      # 64×401 → 32×200
             nn.Dropout2d(0.2),
 
             # FLB2
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU(),
+            nn.ELU(alpha=1.0),
             nn.MaxPool2d((2, 2)),      # 32×200 → 16×100
             nn.Dropout2d(0.2),
 
             # FLB3
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
-            nn.ReLU(),
+            nn.ELU(alpha=1.0),
             nn.MaxPool2d((2, 2)),      # 16×100 → 8×50
             nn.Dropout2d(0.3),
 
             # FLB4
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.AdaptiveMaxPool2d((1, 1))  # 🔥 chiude sempre correttamente
+            nn.ELU(alpha=1.0),
+            nn.AdaptiveMaxPool2d((1, 1))  # chiude sempre correttamente
         )
 
 
