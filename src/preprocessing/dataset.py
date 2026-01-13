@@ -199,6 +199,7 @@ class RavdessDataset(Dataset):
         self.filepaths = filepaths
         self.sample_rate = sample_rate
         self.max_samples = int(sample_rate * max_duration)
+        self.augmentation = augmentation
 
         # Trasformazioni (torchaudio)
         self.mel = T.MelSpectrogram(
