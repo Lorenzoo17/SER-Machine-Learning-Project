@@ -78,7 +78,7 @@ def train_model(
     save_path = os.path.join(save_dir, save_name)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 
     model.to(device)
 

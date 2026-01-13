@@ -161,6 +161,19 @@ def trim_silence_np(audio: np.ndarray, sr: int, top_db: float = 30.0) -> np.ndar
 
     return audio[start_sample:end_sample]
 
+def add_noise(waveform, noise_level=0.005):
+    noise = torch.randn_like(waveform)
+    return waveform + noise_level * noise
+
+def random_gain(waveform, min_gain=0.8, max_gain=1.2):
+    gain = torch.empty(1).uniform_(min_gain, max_gain).item()
+    return waveform * gain
+
+def time_shift(waveform, max_shift=0.1):
+    shift = int(waveform.shape[1] * max_shift)
+    shift = np.random.randint(-shift, shift)
+    return torch.roll(waveform, shifts=shift, dims=1)
+
 
 # DATASET PYTORCH
 class RavdessDataset(Dataset):
@@ -181,6 +194,7 @@ class RavdessDataset(Dataset):
         max_duration: float = 4.0,
         use_db: bool = True,
         top_db: Optional[float] = 80.0,
+        augmentation: bool = False,
     ):
         self.filepaths = filepaths
         self.sample_rate = sample_rate
@@ -253,6 +267,14 @@ class RavdessDataset(Dataset):
 
         # durata fissa
         waveform = self._fix_length(waveform)
+
+        if self.augmentation:
+            if np.random.rand() < 0.5:
+                waveform = add_noise(waveform)
+            if np.random.rand() < 0.5:
+                waveform = random_gain(waveform)
+            if np.random.rand() < 0.5:
+                 waveform = time_shift(waveform)
 
         # mel spectrogram: [1, n_mels, time]
         mel_spec = self.mel(waveform)
