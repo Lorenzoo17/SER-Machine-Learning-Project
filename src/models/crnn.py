@@ -41,13 +41,8 @@ class CRNNBaseline(nn.Module):
             # FLB4
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
-<<<<<<< Updated upstream
             nn.ELU(alpha=1.0),
             nn.AdaptiveMaxPool2d((1, 1))  # chiude sempre correttamente
-=======
-            nn.ReLU(),
-            nn.MaxPool2d((2, 1)),
->>>>>>> Stashed changes
         )
 
 
@@ -55,7 +50,7 @@ class CRNNBaseline(nn.Module):
         # LSTM
         # =========================
         self.lstm = nn.LSTM(
-            input_size=512,
+            input_size=128,
             hidden_size=256, 
             num_layers=1,
             batch_first=True
