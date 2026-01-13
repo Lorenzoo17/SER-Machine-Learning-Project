@@ -10,7 +10,7 @@ class CRNNBaseline(nn.Module):
     Output: [B, num_classes]
     """
 
-    def __init__(self, num_classes=6):
+    def __init__(self, num_classes):
         super().__init__()
 
         # =========================
@@ -41,8 +41,13 @@ class CRNNBaseline(nn.Module):
             # FLB4
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
+<<<<<<< Updated upstream
             nn.ELU(alpha=1.0),
             nn.AdaptiveMaxPool2d((1, 1))  # chiude sempre correttamente
+=======
+            nn.ReLU(),
+            nn.MaxPool2d((2, 1)),
+>>>>>>> Stashed changes
         )
 
 
@@ -50,8 +55,8 @@ class CRNNBaseline(nn.Module):
         # LSTM
         # =========================
         self.lstm = nn.LSTM(
-            input_size=128,
-            hidden_size=256, # da 256 a 128
+            input_size=512,
+            hidden_size=256, 
             num_layers=1,
             batch_first=True
         )
@@ -62,21 +67,18 @@ class CRNNBaseline(nn.Module):
         self.fc = nn.Linear(256, num_classes) # da 256 a 128
 
     def forward(self, x):
-        """
-        x: [B, 1, 128, 251]
-        """
+    # CNN: [B, 1, F, T] -> [B, 128, F', T']
+        x = self.cnn(x)
 
-        # CNN
-        x = self.cnn(x)              # [B, 128, 1, 1]
-
-        # Reshape
-        x = x.squeeze(-1).squeeze(-1)  # [B, 128]
-        x = x.unsqueeze(1)             # [B, 1, 128]
+        # reshape per LSTM: [B, 128, F', T'] -> [B, T', 128*F']
+        B, C, F, T = x.shape
+        x = x.permute(0, 3, 1, 2).contiguous()  # [B, T', C, F']
+        x = x.view(B, T, C * F)                 # [B, T', C*F']  (qui dovrebbe essere 512)
 
         # LSTM
-        out, _ = self.lstm(x)          # [B, 1, 256]
-        out = out[:, -1, :]            # many-to-one
+        out, _ = self.lstm(x)                   # [B, T', 256]
+        out = out[:, -1, :]                     # many-to-one
 
-        # Dense
-        logits = self.fc(out)          # [B, num_classes]
+        # Classifier
+        logits = self.fc(out)                   # [B, num_classes]
         return logits

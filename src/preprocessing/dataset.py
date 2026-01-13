@@ -220,6 +220,110 @@ class RavdessDataset(Dataset):
         # resampler creato "on demand" quando serve
         self._resamplers: Dict[int, T.Resample] = {}
 
+        # =========================
+        # AUGMENTATION PARAMS
+        # =========================
+        self.p_noise = 0.6
+        self.p_gain = 0.5
+        self.p_shift = 0.5
+        self.p_sox = 0.6          # pitch + speed (se sox disponibile)
+        self.p_specaug = 0.7
+
+        # Noise SNR range (dB)
+        self.snr_min_db = 10.0
+        self.snr_max_db = 30.0
+
+        # Gain range
+        self.min_gain = 0.7
+        self.max_gain = 1.3
+
+        # Time shift max fraction of length
+        self.max_shift = 0.10
+
+        # SpecAugment (su log-mel)
+        self.freq_mask = T.FrequencyMasking(freq_mask_param=10)
+        self.time_mask = T.TimeMasking(time_mask_param=30)
+        self.num_freq_masks = 2
+        self.num_time_masks = 2
+
+
+    def _add_noise_snr(self, waveform: torch.Tensor) -> torch.Tensor:
+        # waveform: [1, T]
+        snr_db = float(np.random.uniform(self.snr_min_db, self.snr_max_db))
+        sig_power = waveform.pow(2).mean().clamp_min(1e-12)
+
+        noise = torch.randn_like(waveform)
+        noise_power = noise.pow(2).mean().clamp_min(1e-12)
+
+        # scala rumore per ottenere SNR desiderato
+        scale = torch.sqrt(sig_power / (noise_power * (10 ** (snr_db / 10))))
+        return waveform + noise * scale
+
+    def _random_gain(self, waveform: torch.Tensor) -> torch.Tensor:
+        g = float(np.random.uniform(self.min_gain, self.max_gain))
+        return waveform * g
+
+    def _time_shift(self, waveform: torch.Tensor) -> torch.Tensor:
+        # shift su asse temporale
+        max_samp = int(waveform.shape[1] * self.max_shift)
+        if max_samp <= 0:
+            return waveform
+        shift = int(np.random.randint(-max_samp, max_samp + 1))
+        return torch.roll(waveform, shifts=shift, dims=1)
+
+    def _sox_pitch_speed(self, waveform: torch.Tensor, sr: int) -> torch.Tensor:
+        """
+        Pitch shift + speed perturbation tramite sox (se disponibile).
+        - pitch in cents (±200 ~ ±2 semitoni)
+        - speed (0.9–1.1) e poi resample a sr per mantenere sample rate costante
+        """
+        try:
+            import torchaudio
+            from torchaudio.sox_effects import apply_effects_tensor
+
+            pitch_cents = int(np.random.uniform(-200, 200))
+            speed = float(np.random.uniform(0.9, 1.1))
+
+            effects = [
+                ["pitch", str(pitch_cents)],
+                ["speed", f"{speed:.4f}"],
+                ["rate", str(sr)],  # torna al sample rate target
+            ]
+            wav_out, _ = apply_effects_tensor(waveform, sr, effects)
+            return wav_out
+        except Exception:
+            # se sox/sox_effects non è disponibile, salta senza rompere tutto
+            return waveform
+
+    def _augment_waveform(self, waveform: torch.Tensor, sr: int) -> torch.Tensor:
+        # ordine ragionevole: gain/noise/shift/sox, poi clamp
+        if np.random.rand() < self.p_gain:
+            waveform = self._random_gain(waveform)
+
+        if np.random.rand() < self.p_noise:
+            waveform = self._add_noise_snr(waveform)
+
+        if np.random.rand() < self.p_shift:
+            waveform = self._time_shift(waveform)
+
+        if np.random.rand() < self.p_sox:
+            waveform = self._sox_pitch_speed(waveform, sr)
+
+        return waveform.clamp(-1.0, 1.0)
+
+    def _spec_augment(self, feat: torch.Tensor) -> torch.Tensor:
+        """
+        feat: [1, n_mels, time] (log-mel)
+        Applica SpecAugment (time mask + freq mask) più volte.
+        """
+        x = feat
+        for _ in range(self.num_freq_masks):
+            x = self.freq_mask(x)
+        for _ in range(self.num_time_masks):
+            x = self.time_mask(x)
+        return x
+
+
     def __len__(self) -> int:
         return len(self.filepaths)
 
@@ -270,22 +374,21 @@ class RavdessDataset(Dataset):
         waveform = self._fix_length(waveform)
 
         if self.augmentation:
-            if np.random.rand() < 0.5:
-                waveform = add_noise(waveform)
-            if np.random.rand() < 0.5:
-                waveform = random_gain(waveform)
-            if np.random.rand() < 0.5:
-                 waveform = time_shift(waveform)
+            waveform = self._augment_waveform(waveform, self.sample_rate)
 
-        # mel spectrogram: [1, n_mels, time]
+
+
         mel_spec = self.mel(waveform)
 
-        # log in dB (consigliato per allinearvi al prof)
         if self.use_db and self.to_db is not None:
             feat = self.to_db(mel_spec)
         else:
             feat = torch.log(mel_spec + 1e-9)
 
+        if self.augmentation and (np.random.rand() < self.p_specaug):
+            feat = self._spec_augment(feat)
+
         return feat, y
-    
+
+
  
