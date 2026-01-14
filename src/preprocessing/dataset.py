@@ -187,10 +187,10 @@ class RavdessDataset(Dataset):
         self,
         filepaths: List[str],
         sample_rate: int = 16000,
-        n_mels: int = 64,
-        n_fft: int = 1024,
-        hop_length: int = 160,
-        win_length: int = 400,
+        n_mels: int = 128,
+        n_fft: int = 2048,
+        hop_length: int = 512,
+        win_length: int = 2048,
         max_duration: float = 4.0,
         use_db: bool = True,
         top_db: Optional[float] = 80.0,
@@ -258,6 +258,19 @@ class RavdessDataset(Dataset):
         # scala rumore per ottenere SNR desiderato
         scale = torch.sqrt(sig_power / (noise_power * (10 ** (snr_db / 10))))
         return waveform + noise * scale
+    
+    def _add_noise_paper(self, waveform: torch.Tensor, noise_ratio: float = 0.005) -> torch.Tensor:
+        """
+        Noise augmentation come nel paper:
+        - Rumore gaussiano N(0,1)
+        - Ampiezza rumore = noise_ratio * max(|signal|)
+        """
+        # waveform: [1, T]
+        max_amp = waveform.abs().max().clamp_min(1e-12)  # evita 0
+        noise_std = noise_ratio * max_amp
+
+        noise = torch.randn_like(waveform) * noise_std
+        return waveform + noise
 
     def _random_gain(self, waveform: torch.Tensor) -> torch.Tensor:
         g = float(np.random.uniform(self.min_gain, self.max_gain))
@@ -297,8 +310,9 @@ class RavdessDataset(Dataset):
 
     def _augment_waveform(self, waveform: torch.Tensor, sr: int) -> torch.Tensor:
         # ordine ragionevole: gain/noise/shift/sox, poi clamp
+        '''
         if np.random.rand() < self.p_gain:
-            waveform = self._random_gain(waveform)
+           waveform = self._random_gain(waveform)
 
         if np.random.rand() < self.p_noise:
             waveform = self._add_noise_snr(waveform)
@@ -308,6 +322,10 @@ class RavdessDataset(Dataset):
 
         if np.random.rand() < self.p_sox:
             waveform = self._sox_pitch_speed(waveform, sr)
+    '''
+        # Noise augmentation (paper)
+        if np.random.rand() < self.p_noise:
+            waveform = self._add_noise_paper(waveform)
 
         return waveform.clamp(-1.0, 1.0)
 
