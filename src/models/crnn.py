@@ -2,78 +2,66 @@ import torch
 import torch.nn as nn
 
 
-class CRNNBaseline(nn.Module):
+class CRNN(nn.Module):
     """
-    CRNN conforme allo schema e alla tabella fornita.
-    
-    Input:  [B, 1, 128, 251]
-    Output: [B, num_classes]
+    Baseline SER: CNN (feature extractor) + BiLSTM (temporal) + classifier.
+    Input: [B, 1, n_mels, T]
     """
 
-    def __init__(self, num_classes):
+    def __init__(self, n_classes: int = 8, n_mels: int = 64):
         super().__init__()
 
-        # =========================
-        # Feature Learning Blocks
-        # =========================
         self.cnn = nn.Sequential(
-            # FLB1
-            nn.Conv2d(1, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ELU(alpha=1.0),
-            nn.MaxPool2d((2, 2)),      # 64×401 → 32×200
-            nn.Dropout2d(0.2),
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),  # mels/2, T/2
+            nn.Dropout(0.2),
 
-            # FLB2
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
-            nn.ELU(alpha=1.0),
-            nn.MaxPool2d((2, 2)),      # 32×200 → 16×100
-            nn.Dropout2d(0.2),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),  # mels/4, T/4
+            nn.Dropout(0.2),
 
-            # FLB3
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
-            nn.ELU(alpha=1.0),
-            nn.MaxPool2d((2, 2)),      # 16×100 → 8×50
-            nn.Dropout2d(0.3),
-
-            # FLB4
-            nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ELU(alpha=1.0),
-            nn.AdaptiveMaxPool2d((1, 1))  # chiude sempre correttamente
+            nn.ReLU(),
+            nn.MaxPool2d((2, 1)),  # mels/8, T/4  (preserva un po' il tempo)
+            nn.Dropout(0.2),
         )
 
+        # dopo CNN: [B, C, M', T']
+        # vogliamo LSTM su T': quindi trasformiamo in [B, T', C*M']
+        # M' = n_mels / 8 (se n_mels=64 => 8)
+        m_reduced = n_mels // 8
+        lstm_in = 128 * m_reduced
 
-        # =========================
-        # LSTM
-        # =========================
-        self.lstm = nn.LSTM(
-            input_size=128,
-            hidden_size=256, 
+        self.rnn = nn.LSTM(
+            input_size=lstm_in,
+            hidden_size=128,
             num_layers=1,
-            batch_first=True
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.0,
         )
 
-        # =========================
-        # Classifier
-        # =========================
-        self.fc = nn.Linear(256, num_classes) # da 256 a 128
+        self.classifier = nn.Sequential(
+            nn.Linear(128 * 2, 128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, n_classes),
+        )
 
     def forward(self, x):
-    # CNN: [B, 1, F, T] -> [B, 128, F', T']
-        x = self.cnn(x)
+        # x: [B, 1, M, T]
+        x = self.cnn(x)  # [B, C, M', T']
+        b, c, m, t = x.shape
+        x = x.permute(0, 3, 1, 2).contiguous()      # [B, T', C, M']
+        x = x.view(b, t, c * m)                     # [B, T', C*M']
+        x, _ = self.rnn(x)                          # [B, T', 2H]
 
-        # reshape per LSTM: [B, 128, F', T'] -> [B, T', 128*F']
-        B, C, F, T = x.shape
-        x = x.permute(0, 3, 1, 2).contiguous()  # [B, T', C, F']
-        x = x.view(B, T, C * F)                 # [B, T', C*F']  (qui dovrebbe essere 512)
-
-        # LSTM
-        out, _ = self.lstm(x)                   # [B, T', 256]
-        out = out[:, -1, :]                     # many-to-one
-
-        # Classifier
-        logits = self.fc(out)                   # [B, num_classes]
+        # pooling temporale (mean)
+        x = x.mean(dim=1)                           # [B, 2H]
+        logits = self.classifier(x)                 # [B, n_classes]
         return logits
