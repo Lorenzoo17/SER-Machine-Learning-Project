@@ -2,8 +2,9 @@ import random
 import numpy as np
 import torch
 
-
-def set_seed(seed: int = 42):
+# Imposta i seed (random/numpy/torch) per rendere gli esperimenti riproducibili
+# In modo che tutti i parametri random siano gli stessi ad ogni training (facilita confronti)
+def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
