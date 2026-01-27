@@ -22,7 +22,9 @@ EMOTION_MAP = {
     "08": "surprised",
 }
 
+
 EMOTIONS = list(EMOTION_MAP.values())
+# Dizionari per convertire tra label testuali (es. "happy") e indici numerici (0..7) usati dal modello
 LABEL2IDX = {lab: i for i, lab in enumerate(EMOTIONS)}
 IDX2LABEL = {i: lab for lab, i in LABEL2IDX.items()}
 
@@ -75,10 +77,10 @@ class RavdessDataset(Dataset):
         self,
         filepaths: List[str],
         sample_rate: int = 16000,
-        n_mels: int = 64,
-        n_fft: int = 1024,
-        hop_length: int = 256,
-        win_length: int = 1024,
+        n_mels: int = 128,
+        n_fft: int = 2048,
+        hop_length: int = 512,
+        win_length: int = 2048,
         max_duration: float = 4,
         use_db: bool = True,
         top_db: Optional[float] = 80.0,
