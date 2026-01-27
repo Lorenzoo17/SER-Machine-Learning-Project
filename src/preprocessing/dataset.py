@@ -9,7 +9,7 @@ import torchaudio.transforms as T
 import torchaudio.functional as F
 
 import soundfile as sf
-
+import random
 
 EMOTION_MAP = {
     "01": "neutral",
@@ -77,17 +77,21 @@ class RavdessDataset(Dataset):
         self,
         filepaths: List[str],
         sample_rate: int = 16000,
-        n_mels: int = 128,
-        n_fft: int = 2048,
-        hop_length: int = 512,
-        win_length: int = 2048,
+        n_mels: int = 64,
+        n_fft: int = 1024,
+        hop_length: int = 256,
+        win_length: int = 1024,
         max_duration: float = 4,
         use_db: bool = True,
         top_db: Optional[float] = 80.0,
+        augmentation: bool = False,
+        aug_config: Optional[dict] = None,
     ):
         self.filepaths = filepaths
         self.sample_rate = sample_rate
         self.max_samples = int(sample_rate * max_duration)
+        self.augmentation = augmentation
+        self.aug_config = aug_config or {}
 
         self.mel = T.MelSpectrogram(
             sample_rate=sample_rate,
@@ -126,6 +130,10 @@ class RavdessDataset(Dataset):
 
         # normalize
         wav = wav / (wav.abs().max() + 1e-9)
+
+        # augumentation
+        if self.augmentation:
+            wav = self.apply_augmentation(wav)
         return wav
 
     def __getitem__(self, idx: int):
@@ -141,3 +149,50 @@ class RavdessDataset(Dataset):
         spec = (spec - spec.mean()) / (spec.std() + 1e-6)
 
         return spec, torch.tensor(y, dtype=torch.long)
+
+    def apply_augmentation(self, wav: torch.Tensor) -> torch.Tensor:
+        cfg = self.aug_config
+
+        # 1) Random Gain
+        if cfg.get("gain", False):
+            gmin, gmax = cfg.get("gain_db", (-6, 6))
+            gain_db = random.uniform(gmin, gmax)
+            wav = wav * (10 ** (gain_db / 20))
+
+        # 2) Time Shift (in secondi)
+        if cfg.get("time_shift", False):
+            max_s = cfg.get("time_shift_s", 0.10)  # 100 ms default
+            max_shift = int(max_s * self.sample_rate)
+            shift = random.randint(-max_shift, max_shift)
+            wav = torch.roll(wav, shifts=shift, dims=1)
+
+        # 3) Additive Noise (gaussiano, SNR approx)
+        if cfg.get("noise", False):
+            snr_min, snr_max = cfg.get("snr_db", (10, 30))
+            snr_db = random.uniform(snr_min, snr_max)
+
+            signal_power = wav.pow(2).mean()
+            noise = torch.randn_like(wav)
+            noise_power = noise.pow(2).mean()
+
+            # scala noise per ottenere SNR desiderato
+            snr_linear = 10 ** (snr_db / 10)
+            scale = torch.sqrt(signal_power / (snr_linear * noise_power + 1e-9))
+            wav = wav + scale * noise
+
+        # 4) Simple Reverb (IR sintetica: decadimento esponenziale)
+        if cfg.get("reverb", False):
+            ir_len = int(cfg.get("reverb_ir_s", 0.12) * self.sample_rate)  # 120ms
+            decay = cfg.get("reverb_decay", 0.3)
+            t = torch.arange(ir_len, device=wav.device).float()
+            ir = torch.exp(-t / (decay * self.sample_rate)).unsqueeze(0)  # [1, L]
+            ir = ir / (ir.sum() + 1e-9)
+
+            # conv1d: input [B=1,C=1,N] -> qui wav è [1,N], quindi aggiungi batch
+            wav_b = wav.unsqueeze(0)  # [1,1,N]
+            ir_b = ir.unsqueeze(0)    # [1,1,L]
+            wav = torch.nn.functional.conv1d(wav_b, ir_b, padding=ir_len//2).squeeze(0)
+
+        # clamp finale per sicurezza
+        wav = torch.clamp(wav, -1.0, 1.0)
+        return wav
