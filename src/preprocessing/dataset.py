@@ -153,6 +153,10 @@ class RavdessDataset(Dataset):
     def apply_augmentation(self, wav: torch.Tensor) -> torch.Tensor:
         cfg = self.aug_config
 
+        # Applica augmentation solo al 70% dei campioni
+        if random.random() > 0.7:
+            return wav
+    
         # 1) Random Gain
         if cfg.get("gain", False):
             gmin, gmax = cfg.get("gain_db", (-6, 6))
@@ -181,7 +185,7 @@ class RavdessDataset(Dataset):
             wav = wav + scale * noise
 
         # 4) Simple Reverb (IR sintetica: decadimento esponenziale)
-        if cfg.get("reverb", False):
+        if cfg.get("reverb", False) and random.random() < 0.2:
             ir_len = int(cfg.get("reverb_ir_s", 0.12) * self.sample_rate)  # 120ms
             decay = cfg.get("reverb_decay", 0.3)
             t = torch.arange(ir_len, device=wav.device).float()
