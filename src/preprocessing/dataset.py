@@ -5,11 +5,15 @@ from typing import List, Dict, Optional
 import torch
 from torch.utils.data import Dataset
 
+import torchaudio
 import torchaudio.transforms as T
 import torchaudio.functional as F
 
 import soundfile as sf
 import random
+import numpy as np
+
+
 
 EMOTION_MAP = {
     "01": "neutral",
@@ -81,7 +85,7 @@ class RavdessDataset(Dataset):
         n_fft: int = 1024,
         hop_length: int = 256,
         win_length: int = 1024,
-        max_duration: float = 4,
+        max_duration: float = 6,
         use_db: bool = True,
         top_db: Optional[float] = 80.0,
         augmentation: bool = False,
@@ -107,34 +111,35 @@ class RavdessDataset(Dataset):
     def __len__(self):
         return len(self.filepaths)
 
+
+
     def _load_audio(self, path: str) -> torch.Tensor:
-        # soundfile: ritorna np array shape [N] o [N, C]
-        wav_np, sr = sf.read(path, dtype="float32", always_2d=True)  # [N, C]
-        wav = torch.from_numpy(wav_np).transpose(0, 1)  # [C, N]
+        try:
+            wav, sr = torchaudio.load(path)  # [C, N]
+        except Exception as e:
+            print("FAILED torchaudio:", path, "|", e)
+            wav = torch.zeros(1, self.max_samples)
+            sr = self.sample_rate
 
         # mono
         if wav.size(0) > 1:
             wav = wav.mean(dim=0, keepdim=True)
 
-        # resample se serve (torchaudio.functional.resample)
+        # resample
         if sr != self.sample_rate:
             wav = F.resample(wav, orig_freq=sr, new_freq=self.sample_rate)
 
-        # pad / truncate a durata fissa
+        # pad / truncate
         n = wav.size(1)
         if n < self.max_samples:
-            pad = self.max_samples - n
-            wav = torch.nn.functional.pad(wav, (0, pad))
+            wav = torch.nn.functional.pad(wav, (0, self.max_samples - n))
         else:
             wav = wav[:, : self.max_samples]
 
         # normalize
         wav = wav / (wav.abs().max() + 1e-9)
-
-        # augumentation
-        if self.augmentation:
-            wav = self.apply_augmentation(wav)
         return wav
+            
 
     def __getitem__(self, idx: int):
         path = self.filepaths[idx]
@@ -200,3 +205,60 @@ class RavdessDataset(Dataset):
         # clamp finale per sicurezza
         wav = torch.clamp(wav, -1.0, 1.0)
         return wav
+
+
+
+
+
+
+
+
+# PROVA NUOVO DATA SET CREMA D
+
+# CREMA-D emotions (6 classi standard)
+CREMA_EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgust"]
+
+CREMA_LABEL2IDX = {lab: i for i, lab in enumerate(CREMA_EMOTIONS)}
+CREMA_IDX2LABEL = {i: lab for lab, i in CREMA_LABEL2IDX.items()}
+
+def list_cremad_files(data_root: str):
+    return glob(os.path.join(data_root, "AudioWAV", "*.wav"))
+
+def parse_cremad_filename(filepath: str):
+    base = os.path.basename(filepath)
+    stem = os.path.splitext(base)[0]
+    parts = stem.split("_")
+
+    speaker = parts[0]           
+    emotion_code = parts[2]     
+
+    code_map = {
+        "NEU": "neutral",
+        "HAP": "happy",
+        "SAD": "sad",
+        "ANG": "angry",
+        "FEA": "fearful",
+        "DIS": "disgust",
+    }
+
+    return {
+        "speaker": speaker,
+        "emotion": code_map[emotion_code],
+    }
+
+def extract_cremad_label_idx(filepath: str):
+    info = parse_cremad_filename(filepath)
+    return CREMA_LABEL2IDX[info["emotion"]]
+
+class CremadDataset(RavdessDataset):
+    def __getitem__(self, idx):
+        path = self.filepaths[idx]
+        y = extract_cremad_label_idx(path)
+
+        wav = self._load_audio(path)
+        spec = self.mel(wav)
+        if self.to_db is not None:
+            spec = self.to_db(spec)
+
+        spec = (spec - spec.mean()) / (spec.std() + 1e-6)
+        return spec, torch.tensor(y, dtype=torch.long)
