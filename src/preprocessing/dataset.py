@@ -106,6 +106,20 @@ class RavdessDataset(Dataset):
 
     def __len__(self):
         return len(self.filepaths)
+    
+    def apply_vtlp(self, wav: torch.Tensor, alpha_range=(0.9, 1.1)) -> torch.Tensor:
+        alpha = random.uniform(*alpha_range)
+        
+        # Dominio della frequenza
+        spec = torch.fft.rfft(wav)
+        n_freq = spec.shape[-1]
+        
+        # Creazione indici warped
+        indices = (torch.arange(n_freq, device=wav.device) / alpha).long()
+        indices = torch.clamp(indices, 0, n_freq - 1)
+        
+        spec_warped = spec[:, indices]
+        return torch.fft.irfft(spec_warped, n=wav.size(-1))
 
     def _load_audio(self, path: str) -> torch.Tensor:
         # soundfile: ritorna np array shape [N] o [N, C]
@@ -140,12 +154,22 @@ class RavdessDataset(Dataset):
         path = self.filepaths[idx]
         y = extract_label_idx(path)
 
-        wav = self._load_audio(path)   # [1, N]
-        spec = self.mel(wav)           # [1, n_mels, T]
+        wav = self._load_audio(path) 
+        spec = self.mel(wav)          
         if self.to_db is not None:
             spec = self.to_db(spec)
 
-        # standardizzazione per sample
+        #  AGGIUNTA SPECAUGMENT 
+        if self.augmentation and random.random() < 0.7: # Applica con probabilità 70%
+            # Frequency Masking: oscura bande di frequenza
+            freq_mask = T.FrequencyMasking(freq_mask_param=15) # Parametro: larghezza max maschera
+            spec = freq_mask(spec)
+            
+            # Time Masking: oscura segmenti temporali
+            time_mask = T.TimeMasking(time_mask_param=35) # Parametro: durata max maschera
+            spec = time_mask(spec)
+
+        # Standardizzazione 
         spec = (spec - spec.mean()) / (spec.std() + 1e-6)
 
         return spec, torch.tensor(y, dtype=torch.long)
@@ -156,6 +180,12 @@ class RavdessDataset(Dataset):
         # Applica augmentation solo al 70% dei campioni
         if random.random() > 0.7:
             return wav
+        
+        if cfg.get("pitch_shift", False):
+            n_steps = random.randint(-2, 2) # Spostamento di semi-toni
+            if n_steps != 0:
+                # PitchShift richiede torchaudio >= 0.12
+                wav = T.PitchShift(self.sample_rate, n_steps)(wav)
     
         # 1) Random Gain
         if cfg.get("gain", False):
@@ -196,6 +226,9 @@ class RavdessDataset(Dataset):
             wav_b = wav.unsqueeze(0)  # [1,1,N]
             ir_b = ir.unsqueeze(0)    # [1,1,L]
             wav = torch.nn.functional.conv1d(wav_b, ir_b, padding=ir_len//2).squeeze(0)
+
+        if cfg.get("vtlp", False):
+            wav = self.apply_vtlp(wav)
 
         # clamp finale per sicurezza
         wav = torch.clamp(wav, -1.0, 1.0)
