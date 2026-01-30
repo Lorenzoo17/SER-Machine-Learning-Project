@@ -16,19 +16,19 @@ class CRNN(nn.Module):
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d((2, 2)),  # mels/2, T/2
-            nn.Dropout(0.1),
+            nn.Dropout(0.2),
 
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d((2, 2)),  # mels/4, T/4
-            nn.Dropout(0.1),
+            nn.Dropout(0.25),
 
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.MaxPool2d((2, 1)),  # mels/8, T/4  (preserva un po' il tempo)
-            nn.Dropout(0.2),
+            nn.Dropout(0.3),
         )
 
         # dopo CNN: [B, C, M', T']
@@ -43,13 +43,13 @@ class CRNN(nn.Module):
             num_layers=1,
             batch_first=True,
             bidirectional=True,
-            dropout=0.2,
+            dropout=0.0,
         )
 
         self.classifier = nn.Sequential(
             nn.Linear(128 * 2, 128),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.3),
             nn.Linear(128, n_classes),
         )
 
