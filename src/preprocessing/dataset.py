@@ -145,16 +145,26 @@ class RavdessDataset(Dataset):
         path = self.filepaths[idx]
         y = extract_label_idx(path)
 
-        wav = self._load_audio(path)   # [1, N]
-        spec = self.mel(wav)           # [1, n_mels, T]
+        wav = self._load_audio(path) 
+        spec = self.mel(wav)          
         if self.to_db is not None:
             spec = self.to_db(spec)
 
-        # standardizzazione per sample
+        #  AGGIUNTA SPECAUGMENT 
+        if self.augmentation and random.random() < 0.7: # Applica con probabilità 70%
+            # Frequency Masking: oscura bande di frequenza
+            freq_mask = T.FrequencyMasking(freq_mask_param=15) # Parametro: larghezza max maschera
+            spec = freq_mask(spec)
+            
+            # Time Masking: oscura segmenti temporali
+            time_mask = T.TimeMasking(time_mask_param=35) # Parametro: durata max maschera
+            spec = time_mask(spec)
+
+        # Standardizzazione 
         spec = (spec - spec.mean()) / (spec.std() + 1e-6)
 
         return spec, torch.tensor(y, dtype=torch.long)
-
+    
     def apply_augmentation(self, wav: torch.Tensor) -> torch.Tensor:
         cfg = self.aug_config
 
