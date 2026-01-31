@@ -149,7 +149,8 @@ class RavdessDataset(Dataset):
         if self.augmentation:
             wav = self.apply_augmentation(wav)
         return wav
-
+    '''
+    AUGMENTATION DI LELO 
     def __getitem__(self, idx: int):
         path = self.filepaths[idx]
         y = extract_label_idx(path)
@@ -173,6 +174,41 @@ class RavdessDataset(Dataset):
         spec = (spec - spec.mean()) / (spec.std() + 1e-6)
 
         return spec, torch.tensor(y, dtype=torch.long)
+    '''
+
+   # AUGMENTATION NUOVA FRA 31/01
+    def __getitem__(self, idx: int):
+        path = self.filepaths[idx]
+        y = extract_label_idx(path)
+
+        # speaker id come indice 0..23 (Actor_01..Actor_24)
+        actor_str = parse_ravdess_filename(path)["actor"]
+        speaker_id = int(actor_str) - 1
+
+        wav = self._load_audio(path)
+        spec = self.mel(wav)
+        if self.to_db is not None:
+            spec = self.to_db(spec)
+
+        # SpecAugment "dinamico": maschere proporzionali alla lunghezza
+        if self.augmentation and random.random() < 0.7:
+            _, n_mels, t = spec.shape
+
+            # più maschere piccole spesso > una maschera grande
+            freq_mask_param = max(8, n_mels // 10)
+            time_mask_param = max(12, t // 10)
+
+            for _ in range(2):
+                spec = T.FrequencyMasking(freq_mask_param=freq_mask_param)(spec)
+            for _ in range(2):
+                spec = T.TimeMasking(time_mask_param=time_mask_param)(spec)
+
+        # Standardizzazione per-utterance (già la fai)
+        spec = (spec - spec.mean()) / (spec.std() + 1e-6)
+
+        return spec, torch.tensor(y, dtype=torch.long), torch.tensor(speaker_id, dtype=torch.long)
+
+ 
 
     def apply_augmentation(self, wav: torch.Tensor) -> torch.Tensor:
         cfg = self.aug_config
@@ -187,6 +223,22 @@ class RavdessDataset(Dataset):
                 # PitchShift richiede torchaudio >= 0.12
                 wav = T.PitchShift(self.sample_rate, n_steps)(wav)
     
+        # AGGIUNTA 31/01 Speed perturbation (richiede sox)
+        if cfg.get("speed", False):
+            speed_min, speed_max = cfg.get("speed_range", (0.9, 1.1))
+            speed = random.uniform(speed_min, speed_max)
+
+            # sox_effects lavora su (waveform, sample_rate)
+            effects = [["speed", f"{speed}"], ["rate", f"{self.sample_rate}"]]
+            wav, _ = torchaudio.sox_effects.apply_effects_tensor(wav, self.sample_rate, effects)
+
+            # ripad/truncate alla durata fissa dopo speed
+            n = wav.size(1)
+            if n < self.max_samples:
+                wav = torch.nn.functional.pad(wav, (0, self.max_samples - n))
+            else:
+                wav = wav[:, : self.max_samples]
+                
         # 1) Random Gain
         if cfg.get("gain", False):
             gmin, gmax = cfg.get("gain_db", (-6, 6))
