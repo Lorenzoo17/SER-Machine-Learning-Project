@@ -20,24 +20,39 @@ def accuracy_from_logits(logits: torch.Tensor, y: torch.Tensor) -> float:
     return (preds == y).float().mean().item()
 
 
+import torch
+import torch.nn.functional as F
+
 @torch.no_grad()
-def evaluate(model, loader, device):
+def evaluate(model, loader, device, use_dann: bool = False):
+    """
+    Compatibile con DataLoader che produce:
+      - (x, y)
+      - (x, y, d)   (d = domain/speaker id)
+
+    Se use_dann=True, assume che model(x, grl_lambda=0.0) ritorni:
+      emo_logits, dom_logits, z
+    Se use_dann=False, assume che model(x) ritorni:
+      emo_logits
+    """
     model.eval()
     total_loss = 0.0
-    total_correct = 0
+    correct = 0
     total = 0
 
-    import torch.nn.functional as F
+    for batch in loader:
+        x = batch[0].to(device)
+        y = batch[1].to(device)
 
-    for x, y in loader:
-        x = x.to(device)
-        y = y.to(device)
+        if use_dann:
+            emo_logits, _, _ = model(x, grl_lambda=0.0)
+        else:
+            emo_logits = model(x)
 
-        logits = model(x)
-        loss = F.cross_entropy(logits, y)
+        loss = F.cross_entropy(emo_logits, y)
 
         total_loss += loss.item() * y.size(0)
-        total_correct += (logits.argmax(dim=1) == y).sum().item()
+        correct += (emo_logits.argmax(dim=1) == y).sum().item()
         total += y.size(0)
 
-    return total_loss / total, total_correct / total
+    return total_loss / total, correct / total

@@ -102,7 +102,21 @@ class RavdessDataset(Dataset):
             power=2.0,
         )
 
+        self.hop_length = hop_length
+        self.fixed_frames = int(self.max_samples // hop_length) + 1
+
         self.to_db = T.AmplitudeToDB(stype="power", top_db=top_db) if use_db else None
+
+    def _fix_spec_length(self, spec: torch.Tensor) -> torch.Tensor:
+        # spec: [1, n_mels, T]
+        T = spec.size(-1)
+        if T < self.fixed_frames:
+            pad = self.fixed_frames - T
+            spec = torch.nn.functional.pad(spec, (0, pad))
+        elif T > self.fixed_frames:
+            spec = spec[:, :, :self.fixed_frames]
+        return spec
+
 
     def __len__(self):
         return len(self.filepaths)
@@ -190,6 +204,8 @@ class RavdessDataset(Dataset):
         if self.to_db is not None:
             spec = self.to_db(spec)
 
+        spec = self._fix_spec_length(spec)
+
         # SpecAugment "dinamico": maschere proporzionali alla lunghezza
         if self.augmentation and random.random() < 0.7:
             _, n_mels, t = spec.shape
@@ -224,20 +240,21 @@ class RavdessDataset(Dataset):
                 wav = T.PitchShift(self.sample_rate, n_steps)(wav)
     
         # AGGIUNTA 31/01 Speed perturbation (richiede sox)
+        # Speed perturbation (portable, no sox)
         if cfg.get("speed", False):
             speed_min, speed_max = cfg.get("speed_range", (0.9, 1.1))
             speed = random.uniform(speed_min, speed_max)
 
-            # sox_effects lavora su (waveform, sample_rate)
-            effects = [["speed", f"{speed}"], ["rate", f"{self.sample_rate}"]]
-            wav, _ = torchaudio.sox_effects.apply_effects_tensor(wav, self.sample_rate, effects)
-
-            # ripad/truncate alla durata fissa dopo speed
             n = wav.size(1)
-            if n < self.max_samples:
-                wav = torch.nn.functional.pad(wav, (0, self.max_samples - n))
-            else:
-                wav = wav[:, : self.max_samples]
+            new_n = int(n / speed)
+
+            wav = torch.nn.functional.interpolate(
+                wav.unsqueeze(0),
+                size=new_n,
+                mode="linear",
+                align_corners=False
+            ).squeeze(0)
+
                 
         # 1) Random Gain
         if cfg.get("gain", False):
