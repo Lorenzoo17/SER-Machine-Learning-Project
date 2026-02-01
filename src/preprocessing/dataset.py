@@ -160,13 +160,13 @@ class RavdessDataset(Dataset):
             spec = self.to_db(spec)
 
         #  AGGIUNTA SPECAUGMENT 
-        if self.augmentation and random.random() < 0.7: # Applica con probabilità 70%
+        if self.augmentation and random.random() < 0.5: # Applica con probabilità 70%
             # Frequency Masking: oscura bande di frequenza
-            freq_mask = T.FrequencyMasking(freq_mask_param=15) # Parametro: larghezza max maschera
+            freq_mask = T.FrequencyMasking(freq_mask_param=10) # Parametro: larghezza max maschera
             spec = freq_mask(spec)
             
             # Time Masking: oscura segmenti temporali
-            time_mask = T.TimeMasking(time_mask_param=35) # Parametro: durata max maschera
+            time_mask = T.TimeMasking(time_mask_param=25) # Parametro: durata max maschera
             spec = time_mask(spec)
 
         # Standardizzazione 
