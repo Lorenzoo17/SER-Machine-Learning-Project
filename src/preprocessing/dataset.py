@@ -102,6 +102,8 @@ class RavdessDataset(Dataset):
             power=2.0,
         )
 
+        self._freq_mask = T.FrequencyMasking(freq_mask_param=15)
+        self._time_mask = T.TimeMasking(time_mask_param=35)
         self.to_db = T.AmplitudeToDB(stype="power", top_db=top_db) if use_db else None
 
     def __len__(self):
@@ -159,15 +161,9 @@ class RavdessDataset(Dataset):
         if self.to_db is not None:
             spec = self.to_db(spec)
 
-        #  AGGIUNTA SPECAUGMENT 
-        if self.augmentation and random.random() < 0.7: # Applica con probabilità 70%
-            # Frequency Masking: oscura bande di frequenza
-            freq_mask = T.FrequencyMasking(freq_mask_param=15) # Parametro: larghezza max maschera
-            spec = freq_mask(spec)
-            
-            # Time Masking: oscura segmenti temporali
-            time_mask = T.TimeMasking(time_mask_param=35) # Parametro: durata max maschera
-            spec = time_mask(spec)
+        if self.augmentation and random.random() < 0.7: 
+            spec = self._freq_mask(spec)
+            spec = self._time_mask(spec)
 
         # Standardizzazione 
         spec = (spec - spec.mean()) / (spec.std() + 1e-6)
