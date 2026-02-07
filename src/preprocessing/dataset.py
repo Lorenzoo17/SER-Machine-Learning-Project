@@ -210,22 +210,6 @@ class RavdessDataset(Dataset):
             scale = torch.sqrt(signal_power / (snr_linear * noise_power + 1e-9))
             wav = wav + scale * noise
 
-        # 4) Simple Reverb (IR sintetica: decadimento esponenziale)
-        if cfg.get("reverb", False) and random.random() < 0.2:
-            ir_len = int(cfg.get("reverb_ir_s", 0.12) * self.sample_rate)  # 120ms
-            decay = cfg.get("reverb_decay", 0.3)
-            t = torch.arange(ir_len, device=wav.device).float()
-            ir = torch.exp(-t / (decay * self.sample_rate)).unsqueeze(0)  # [1, L]
-            ir = ir / (ir.sum() + 1e-9)
-
-            # conv1d: input [B=1,C=1,N] -> qui wav è [1,N], quindi aggiungi batch
-            wav_b = wav.unsqueeze(0)  # [1,1,N]
-            ir_b = ir.unsqueeze(0)    # [1,1,L]
-            wav = torch.nn.functional.conv1d(wav_b, ir_b, padding=ir_len//2).squeeze(0)
-
-        if cfg.get("vtlp", False):
-            wav = self.apply_vtlp(wav)
-
         # clamp finale per sicurezza
         wav = torch.clamp(wav, -1.0, 1.0)
         return wav
