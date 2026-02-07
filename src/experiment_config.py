@@ -41,4 +41,6 @@ class ExperimentConfig:
 
             "noise": True,
             "snr_db": (25, 40),
+
+            "reverb" : False,
         }
